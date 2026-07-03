@@ -29,19 +29,25 @@ RUN apt-get update \
 #   wireshark           the Qt GUI (pulls libwireshark, dumpcap, etc.)
 #   qtwayland5          Qt's Wayland platform plugin (QT_QPA_PLATFORM=wayland)
 #   libgl1-mesa-dri     Mesa's software rasterizer (llvmpipe) for LIBGL_ALWAYS_SOFTWARE
+#   libcap2-bin         setcap — lets the wireshark-common postinst grant dumpcap
+#                       CAP_NET_RAW,CAP_NET_ADMIN file caps (a Recommends, so it
+#                       must be named explicitly under --no-install-recommends)
 #   dbus                Wireshark/Qt expect a session bus
 #   libxkbcommon0       keyboard handling under Wayland
 #   fonts-dejavu        rendering
 #   ca-certificates     TLS
-# debconf preseed: don't make dumpcap setuid-root — this is a viewer, and the
-# prompt would otherwise block the non-interactive build.
-RUN echo "wireshark-common wireshark-common/install-setuid boolean false" \
+# debconf preseed: make dumpcap capture-capable for non-root users. With
+# install-setuid=true and libcap2-bin present, the postinst sets dumpcap to
+# root:wireshark 0750 and applies cap_net_raw,cap_net_admin=ep — members of the
+# wireshark group (see below) can then capture.
+RUN echo "wireshark-common wireshark-common/install-setuid boolean true" \
       | debconf-set-selections \
  && apt-get update \
  && apt-get install -y --no-install-recommends \
       wireshark \
       qtwayland5 \
       libgl1-mesa-dri \
+      libcap2-bin \
       dbus \
       libxkbcommon0 \
       xkb-data \
@@ -49,9 +55,11 @@ RUN echo "wireshark-common wireshark-common/install-setuid boolean false" \
       ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 
-# Non-root user — Qt stores config under HOME, and capturing is not the goal
-# here (opening capture files / interfaces piped in by the host is).
-RUN useradd -m -u 1000 -s /bin/bash user
+# Non-root user — Qt stores config under HOME. Add it to the `wireshark` group
+# (created by wireshark-common above) so the capability-granted dumpcap can be
+# executed for live capture.
+RUN useradd -m -u 1000 -s /bin/bash user \
+ && usermod -aG wireshark user
 
 # Environment for the container process. sailor reads these from the OCI image
 # config on pull — no manual /.container-env file.
