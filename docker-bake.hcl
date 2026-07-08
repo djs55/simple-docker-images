@@ -31,7 +31,7 @@ function "tag" {
 }
 
 group "default" {
-  targets = ["wireshark", "tcpdump", "erofs", "bpftool", "fio", "hwloc", "opam"]
+  targets = ["wireshark", "gimp", "inkscape", "tcpdump", "erofs", "bpftool", "fio", "hwloc", "opam"]
 }
 
 target "wireshark" {
@@ -39,6 +39,20 @@ target "wireshark" {
   dockerfile = "Dockerfile"
   platforms  = PLATFORMS
   tags       = tag("wireshark")
+}
+
+target "gimp" {
+  context    = "gimp"
+  dockerfile = "Dockerfile"
+  platforms  = PLATFORMS
+  tags       = tag("gimp")
+}
+
+target "inkscape" {
+  context    = "inkscape"
+  dockerfile = "Dockerfile"
+  platforms  = PLATFORMS
+  tags       = tag("inkscape")
 }
 
 target "tcpdump" {
