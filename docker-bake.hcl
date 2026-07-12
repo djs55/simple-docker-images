@@ -48,6 +48,9 @@ group "default" {
   targets = ["wireshark", "gimp", "inkscape", "tcpdump", "erofs", "bpftool", "fio", "hwloc", "opam"]
 }
 
+# target = app-rootfs: these Wayland-app Dockerfiles have trailing erofs stages,
+# so the registry image must pin the app stage (the default last stage is the
+# FROM-scratch erofs export).
 target "wireshark" {
   context    = "wireshark"
   dockerfile = "Dockerfile"
@@ -55,6 +58,16 @@ target "wireshark" {
   platforms  = PLATFORMS
   tags       = tag("wireshark")
   output     = image_output()
+}
+
+# Local EROFS for testing (no registry round-trip). Outputs
+# wireshark/bin/wireshark.erofs.
+target "wireshark-erofs" {
+  context    = "wireshark"
+  dockerfile = "Dockerfile"
+  target     = "wireshark-erofs"
+  platforms  = ["linux/amd64"]
+  output     = ["wireshark/bin"]
 }
 
 target "gimp" {
@@ -66,6 +79,14 @@ target "gimp" {
   output     = image_output()
 }
 
+target "gimp-erofs" {
+  context    = "gimp"
+  dockerfile = "Dockerfile"
+  target     = "gimp-erofs"
+  platforms  = ["linux/amd64"]
+  output     = ["gimp/bin"]
+}
+
 target "inkscape" {
   context    = "inkscape"
   dockerfile = "Dockerfile"
@@ -73,6 +94,14 @@ target "inkscape" {
   platforms  = PLATFORMS
   tags       = tag("inkscape")
   output     = image_output()
+}
+
+target "inkscape-erofs" {
+  context    = "inkscape"
+  dockerfile = "Dockerfile"
+  target     = "inkscape-erofs"
+  platforms  = ["linux/amd64"]
+  output     = ["inkscape/bin"]
 }
 
 target "tcpdump" {

@@ -2,11 +2,18 @@
 #
 # GIMP 3 (GTK3 GUI) on Wayland, software-rendered.
 #
-# Multiarch (amd64 + arm64) registry image. Build + push (OCI media types keep
-# the run.sailor.* labels):
-#   PUSH=true docker buildx bake --builder multiarch-builder gimp
+# Two ways to build:
 #
-# env/user/command come from the OCI image config (ENV / USER / CMD).
+#   Registry image (amd64 + arm64), pull-only:
+#     PUSH=true docker buildx bake --builder multiarch-builder gimp
+#
+#   Local EROFS (amd64), for testing without a registry round-trip:
+#     docker buildx bake gimp-erofs       # → gimp/bin/gimp.erofs
+#
+# On the registry path env/user/command come from the OCI image config
+# (ENV / USER / CMD). The local EROFS has no OCI config, so the
+# /.container-{env,user,entrypoint} files written in the erofs-rootfs stage
+# supply them instead.
 
 # GIMP 3 is GTK3 and speaks Wayland natively; GIMP 2.10 (bookworm) is GTK2 and
 # would need XWayland, so this image tracks trixie (gimp 3.0).
@@ -74,3 +81,42 @@ LABEL run.sailor.icon=/usr/share/icons/hicolor/256x256/apps/gimp.png \
 # Start a D-Bus session, then launch GIMP. /mnt/host is the host share — pass an
 # image there to open it, e.g. append "/mnt/host/picture.png".
 CMD ["/usr/bin/dbus-run-session", "/usr/bin/gimp"]
+
+# ── EROFS rootfs ────────────────────────────────────────────────────────────────
+# The local EROFS path has no OCI config, so the env/user/command come from
+# /.container-* files. These MUST NOT be baked into app-rootfs (the registry
+# image): on the pull path /.container-entrypoint is only overwritten when the
+# OCI entrypoint is non-empty, so a baked one would survive and get concatenated
+# with the injected /.container-cmd — launching the command twice. Keep them in
+# this erofs-only stage. Mirrors the ENV / USER / CMD above; /.container-env is
+# KEY=VALUE per line.
+FROM app-rootfs AS erofs-rootfs
+
+USER root
+RUN printf '%s\n' \
+      'GDK_BACKEND=wayland' \
+      'LIBGL_ALWAYS_SOFTWARE=1' \
+      'GALLIUM_DRIVER=llvmpipe' \
+      'LANG=en_US.UTF-8' \
+      'LC_ALL=en_US.UTF-8' \
+      'HOME=/home/user' \
+    > /.container-env \
+ && echo 'user' > /.container-user \
+ && printf '%s\n' \
+      /usr/bin/dbus-run-session \
+      /usr/bin/gimp \
+    > /.container-entrypoint
+
+# ── Build EROFS ───────────────────────────────────────────────────────────────
+FROM --platform=linux/amd64 debian:${BASE_DEBIAN_DISTRO}-slim AS erofs-builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends erofs-utils \
+ && rm -rf /var/lib/apt/lists/*
+
+COPY --from=erofs-rootfs / /rootfs/
+
+RUN mkfs.erofs -z lz4 /gimp.erofs /rootfs/
+
+# ── Export ────────────────────────────────────────────────────────────────────
+FROM scratch AS gimp-erofs
+COPY --from=erofs-builder /gimp.erofs /gimp.erofs
