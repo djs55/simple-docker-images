@@ -2,17 +2,14 @@
 #
 # GIMP 3 (GTK3 GUI) on Wayland, software-rendered.
 #
-# Multiarch (amd64 + arm64) registry image. Build + push with:
-#   docker buildx bake --builder multiarch-builder --push gimp   # → djs55/gimp:latest
-# Run with:
-#   sailor run --display --memory 2G djs55/gimp:latest
+# Multiarch (amd64 + arm64) registry image. Build + push (OCI media types keep
+# the run.sailor.* labels):
+#   PUSH=true docker buildx bake --builder multiarch-builder gimp
 #
-# Pure OCI config (ENV / USER / CMD); sailor derives the guest env/user/command
-# from the image config on pull. GIMP 3 is GTK3 and speaks Wayland natively;
-# GIMP 2.10 (bookworm) is GTK2 and would need XWayland, so this image tracks
-# trixie (gimp 3.0). compositor-guest is linked into container-init and
-# activated by the display.vsock_port kernel cmdline parameter.
+# env/user/command come from the OCI image config (ENV / USER / CMD).
 
+# GIMP 3 is GTK3 and speaks Wayland natively; GIMP 2.10 (bookworm) is GTK2 and
+# would need XWayland, so this image tracks trixie (gimp 3.0).
 ARG BASE_DEBIAN_DISTRO=trixie
 
 FROM debian:${BASE_DEBIAN_DISTRO}-slim AS app-rootfs
@@ -51,8 +48,7 @@ RUN apt-get update \
 # Non-root user — GTK/GIMP store config + data under HOME.
 RUN useradd -m -u 1000 -s /bin/bash user
 
-# Environment for the container process. sailor reads these from the OCI image
-# config on pull.
+# Environment for the container process (from the OCI image config on pull).
 #   GDK_BACKEND=wayland       force the native Wayland backend (no XWayland)
 #   LIBGL_ALWAYS_SOFTWARE=1   route GL through Mesa llvmpipe (no GPU in the guest)
 #   GALLIUM_DRIVER=llvmpipe   ditto, belt-and-suspenders
@@ -67,10 +63,14 @@ ENV GDK_BACKEND=wayland \
 RUN mkdir -p /proc /sys /dev /mnt/host /run /home/user/.config \
  && chown -R user:user /home/user
 
-# Run as uid 1000 (user), not root: sailor honours the image's USER directive.
+# Run as uid 1000 (user), not root, via the image's USER directive.
 USER user
 
-# Start a D-Bus session, then launch GIMP. sailor derives the container command
-# from CMD. /mnt/host is the virtiofs host share — pass an image there to open
-# it, e.g. append "/mnt/host/picture.png".
+# App icon + title. titlebar=guest → borderless (GTK draws its own chrome).
+LABEL run.sailor.icon=/usr/share/icons/hicolor/256x256/apps/gimp.png \
+      run.sailor.titlebar=guest \
+      org.opencontainers.image.title="GIMP (Linux)"
+
+# Start a D-Bus session, then launch GIMP. /mnt/host is the host share — pass an
+# image there to open it, e.g. append "/mnt/host/picture.png".
 CMD ["/usr/bin/dbus-run-session", "/usr/bin/gimp"]

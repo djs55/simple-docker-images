@@ -2,15 +2,11 @@
 #
 # Wireshark (Qt GUI) on Wayland, software-rendered.
 #
-# Multiarch (amd64 + arm64) registry image. Build + push with:
-#   docker buildx build --platform linux/amd64,linux/arm64 \
-#     -t djs55/wireshark:latest --push wireshark
-# Run with:
-#   sailor run --display --memory 2G djs55/wireshark:latest
+# Multiarch (amd64 + arm64) registry image. Build + push (OCI media types keep
+# the run.sailor.* labels):
+#   PUSH=true docker buildx bake --builder multiarch-builder wireshark
 #
-# Pure OCI config (ENV / USER / CMD); sailor derives the guest env/user/command
-# from the image config on pull. compositor-guest is linked into container-init
-# and activated by the display.vsock_port kernel cmdline parameter.
+# env/user/command come from the OCI image config (ENV / USER / CMD).
 
 ARG BASE_DEBIAN_DISTRO=bookworm
 
@@ -61,8 +57,7 @@ RUN echo "wireshark-common wireshark-common/install-setuid boolean true" \
 RUN useradd -m -u 1000 -s /bin/bash user \
  && usermod -aG wireshark user
 
-# Environment for the container process. sailor reads these from the OCI image
-# config on pull — no manual /.container-env file.
+# Environment for the container process (from the OCI image config on pull).
 #   QT_QPA_PLATFORM                force the Qt Wayland backend
 #   QT_WAYLAND_DISABLE_WINDOWDECORATION  let the compositor draw decorations
 #   LIBGL_ALWAYS_SOFTWARE          route GL through Mesa llvmpipe (only host path)
@@ -77,10 +72,13 @@ ENV QT_QPA_PLATFORM=wayland \
 RUN mkdir -p /proc /sys /dev /mnt/host /run /home/user/.config \
  && chown -R user:user /home/user
 
-# Run as uid 1000 (user), not root: sailor honours the image's USER directive.
+# Run as uid 1000 (user), not root, via the image's USER directive.
 USER user
 
-# Start a D-Bus session, then launch Wireshark. sailor derives the container
-# command from CMD. /mnt/host is the virtiofs host share — pass a .pcap there
-# to open it, e.g. append "/mnt/host/capture.pcap".
+# App icon + title. No titlebar label → default "host" (Qt draws no chrome).
+LABEL run.sailor.icon=/usr/share/icons/hicolor/256x256/apps/org.wireshark.Wireshark.png \
+      org.opencontainers.image.title="Wireshark (Linux)"
+
+# Start a D-Bus session, then launch Wireshark. /mnt/host is the host share —
+# pass a .pcap there to open it, e.g. append "/mnt/host/capture.pcap".
 CMD ["/usr/bin/dbus-run-session", "/usr/bin/wireshark"]
